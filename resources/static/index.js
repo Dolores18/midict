@@ -1,7 +1,7 @@
 // 光标默认可输入
 $(document).ready(function (e) {
-        $('#word').focus();
-    }
+    $('#word').focus();
+}
 );
 
 // 查询mdx
@@ -10,11 +10,15 @@ function queryMdx(word) {
     $.ajax({
         url: './query',
         type: 'POST',
-        data: {'word': word},
+        data: { 'word': word },
         dataType: 'html',
         success: function (data) {
             if (data !== '') {
                 $('#mdx-resp').html(data).show();
+                // Initialize lm6 functionality after content is loaded
+                if (typeof main === 'function') {
+                    main();
+                }
             } else {
                 $('#mdx-resp').hide();
             }
@@ -76,6 +80,10 @@ $(document).on('click', '#lucky-btn', function (e) {
         success: function (data) {
             if (data !== '') {
                 $('#mdx-resp').html(data).show();
+                // Initialize lm6 functionality after content is loaded
+                if (typeof main === 'function') {
+                    main();
+                }
             } else {
                 $('#mdx-resp').hide();
             }

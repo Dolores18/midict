@@ -110,7 +110,10 @@ impl Mdx {
         let record_decompressed =
             &block_decompressed[rs.record_start_in_de_block..rs.record_end_in_de_block];
 
-        let def = String::from_utf8_lossy(record_decompressed).to_string();
+        // 使用MDX头部指定的编码，而不是硬编码UTF-8
+        use encoding::label::encoding_from_whatwg_label;
+        let decoder = encoding_from_whatwg_label(&self.encoding).unwrap();
+        let def = decoder.decode(record_decompressed, encoding::DecoderTrap::Ignore).unwrap();
 
         return def;
     }

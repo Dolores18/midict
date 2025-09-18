@@ -17,6 +17,26 @@ pub fn query(word: String) -> String {
         let row = rows.next().unwrap();
         if let Some(row) = row {
             let def = row.get::<usize, String>(1).unwrap();
+            println!("找到词条，完整定义内容:");
+            println!("{}", def);
+            
+            // 十六进制分析
+            println!("十六进制字节:");
+            let hex_str: String = def.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+            println!("{}", hex_str);
+            
+            // 手动解析十六进制看看内容
+            println!("手动解析:");
+            let bytes = def.as_bytes();
+            for (i, &byte) in bytes.iter().enumerate() {
+                if byte >= 32 && byte <= 126 {
+                    println!("  [{}]: 0x{:02x} = '{}'", i, byte, byte as char);
+                } else {
+                    println!("  [{}]: 0x{:02x} = <控制字符>", i, byte);
+                }
+            }
+            
+            println!("--- 定义内容结束 ---");
             return def;
         }
     }

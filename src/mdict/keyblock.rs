@@ -123,7 +123,7 @@ pub fn parse_key_block_info<'a>(
 
         let mut key_block_info = vec![];
 
-        if encrypted == "0" {
+        if encrypted == "No" || encrypted == "0" {
             ZlibDecoder::new(&block_info[8..])
                 .read_to_end(&mut key_block_info)
                 .unwrap();
