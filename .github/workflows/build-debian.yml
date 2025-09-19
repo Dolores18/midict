@@ -3,14 +3,23 @@ name: Build Debian Package
 on:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]
+    # 移除 tags 触发，避免与 release.yml 冲突
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:  # 允许手动触发
+    inputs:
+      create_release:
+        description: '是否创建独立的 Debian Release'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to create releases
+      packages: write  # Required to upload release assets
     steps:
       - name: 🚀 Start build
         run: echo "🚀 Building mdict-rs Debian package"
@@ -196,14 +205,25 @@ jobs:
           name: mdict-rs-debian
           path: mdict-rs_*.deb
 
-      # 仅在发布标签时创建发布
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # 仅在手动触发且指定创建 Release 时才创建
+      - name: Create Debian Release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: debian-${{ env.VERSION }}
+          name: "Debian Package v${{ env.VERSION }}"
           files: mdict-rs_*.deb
           draft: false
-          prerelease: false
+          prerelease: true
+          body: |
+            ## 📦 mdict-rs Debian Package
+            
+            ### 安装命令
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/debian-${{ env.VERSION }}/mdict-rs_${{ env.VERSION }}_amd64.deb
+            sudo dpkg -i mdict-rs_${{ env.VERSION }}_amd64.deb
+            sudo apt-get install -f
+            ```
           body: |
             ## 📦 mdict-rs Debian Package Release
             
