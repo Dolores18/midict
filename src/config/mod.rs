@@ -10,7 +10,6 @@ pub const MDX_FILES: &[&str] = &[
 ];
 
 pub fn static_path() -> anyhow::Result<PathBuf> {
-    let mut path: PathBuf = env!("CARGO_MANIFEST_DIR").into();
-    path.push("resources/static");
-    Ok(path)
+    // 使用当前工作目录的相对路径，而不是编译时路径
+    Ok(PathBuf::from("./resources/static"))
 }

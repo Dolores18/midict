@@ -1,0 +1,11 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8181
+  },
+  "mdx_files": [
+    "./resources/mdx/en/朗文当代高级英语辞典6th.mdx"
+  ],
+  "static_path": "./resources/static",
+  "log_level": "info"
+}
