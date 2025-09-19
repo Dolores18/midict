@@ -15,48 +15,89 @@ fn query_with_redirect_resolution(word: String, redirect_count: u8) -> String {
     }
     
     let w = word.clone();
+    let mut all_definitions = Vec::new();
+    let mut redirect_targets = Vec::new();
+    
     for file in MDX_FILES {
         let db_file = format!("{file}.db");
         let conn = Connection::open(&db_file).unwrap();
+        
+        // 搜索所有匹配的条目（现在可以有多个相同的text）
         let mut stmt = conn
-            .prepare("select * from MDX_INDEX WHERE text= :word limit 1;")
+            .prepare("SELECT id, text, def FROM MDX_INDEX WHERE text = :word ORDER BY id;")
             .unwrap();
-        info!("query params={}, dict={}, redirect_depth={}", &w, file, redirect_count);
-
+        info!("Searching for all entries: {} in dict: {}, redirect_depth: {}", &w, file, redirect_count);
+        
         let mut rows = stmt.query(named_params! { ":word": w }).unwrap();
-        let row = rows.next().unwrap();
-        if let Some(row) = row {
-            let def = row.get::<usize, String>(1).unwrap();
+        let mut found_entries = 0;
+        
+        while let Ok(Some(row)) = rows.next() {
+            found_entries += 1;
+            let _id = row.get::<usize, i64>(0).unwrap();  // id 列
+            let _text = row.get::<usize, String>(1).unwrap(); // text 列  
+            let def = row.get::<usize, String>(2).unwrap();   // def 列
             
             // Check if this is a redirect link
             if def.starts_with("@@@LINK=") {
                 let target_word = def.strip_prefix("@@@LINK=")
                     .unwrap_or(&def)
-                    .trim()  // Remove whitespace
-                    .trim_end_matches('\0')  // Remove null terminator
-                    .trim();  // Trim again just in case
-                info!("Found redirect: '{}' -> '{}', resolving...", word, target_word);
+                    .trim()
+                    .trim_end_matches('\0')
+                    .trim();
+                info!("Found redirect: '{}' -> '{}' (entry {}), resolving...", word, target_word, found_entries);
                 
-                // Recursively resolve the redirect
-                return query_with_redirect_resolution(target_word.to_string(), redirect_count + 1);
+                // 收集所有跳转目标，而不是立即返回第一个
+                redirect_targets.push(target_word.to_string());
+            } else {
+                // 直接的定义内容
+                all_definitions.push(def);
             }
+        }
+        
+        info!("Found {} entries for '{}', {} redirects, {} direct definitions", 
+              found_entries, word, redirect_targets.len(), all_definitions.len());
+        
+        // 如果没有精确匹配，尝试模式匹配
+        if found_entries == 0 {
+            let pattern = format!("%【{}】%", w);
+            let mut stmt = conn
+                .prepare("SELECT id, text, def FROM MDX_INDEX WHERE text LIKE :pattern ORDER BY id;")
+                .unwrap();
+            info!("Trying pattern match for: {} in dict: {}", &pattern, file);
             
-            // This is a regular definition, return it
-            info!("Found definition for '{}'", word);
+            let mut rows = stmt.query(named_params! { ":pattern": pattern }).unwrap();
             
-            // 不再逐字符打印，提高性能
-            // println!("手动解析:");
-            // let bytes = def.as_bytes();
-            // for (i, &byte) in bytes.iter().enumerate() {
-            //     if byte >= 32 && byte <= 126 {
-            //         println!("  [{}]: 0x{:02x} = '{}'", i, byte, byte as char);
-            //     } else {
-            //         println!("  [{}]: 0x{:02x} = <控制字符>", i, byte);
-            //     }
-            // }
-            
-            return def;
+            while let Ok(Some(row)) = rows.next() {
+                let def = row.get::<usize, String>(2).unwrap();   // def 列
+                
+                if def.starts_with("@@@LINK=") {
+                    let target_word = def.strip_prefix("@@@LINK=")
+                        .unwrap_or(&def)
+                        .trim()
+                        .trim_end_matches('\0')
+                        .trim();
+                    info!("Found pattern redirect: '{}' -> '{}', resolving...", word, target_word);
+                    redirect_targets.push(target_word.to_string());
+                } else {
+                    all_definitions.push(def);
+                }
+            }
         }
     }
+    
+    // 递归解析所有跳转目标
+    for target in redirect_targets {
+        let resolved_def = query_with_redirect_resolution(target, redirect_count + 1);
+        if resolved_def != "not found" {
+            all_definitions.push(resolved_def);
+        }
+    }
+    
+    if !all_definitions.is_empty() {
+        info!("Found {} total definitions for '{}'", all_definitions.len(), word);
+        // 合并所有定义
+        return all_definitions.join("\n\n=== Next Entry ===\n\n");
+    }
+    
     "not found".to_string()
 }
