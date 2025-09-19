@@ -226,20 +226,37 @@ jobs:
         run: |
           mkdir -p release-assets
           
+          echo "📂 检查下载的 artifacts:"
+          ls -la artifacts/
+          
           # Copy all binaries and rename them
           for dir in artifacts/mdict-rs-*; do
             if [[ -d "$dir" ]]; then
               target=$(basename "$dir" | sed 's/mdict-rs-//')
+              echo "🔍 处理目标: $target"
+              echo "📁 目录内容:"
+              ls -la "$dir/"
               
-              # Find the binary file
-              if [[ -f "$dir/mdict-rs-"*".exe" ]]; then
-                # Windows binary
-                binary_file=$(ls "$dir"/mdict-rs-*.exe | head -1)
-                cp "$binary_file" "release-assets/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-${target}.exe"
-              elif [[ -f "$dir/mdict-rs-"* ]]; then
-                # Unix binary
-                binary_file=$(ls "$dir"/mdict-rs-* | grep -v version.json | head -1)
-                cp "$binary_file" "release-assets/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-${target}"
+              # 根据目标平台查找二进制文件
+              if [[ "$target" == "x86_64-pc-windows-msvc" ]]; then
+                # Windows binary - 查找 .exe 文件
+                for file in "$dir"/*; do
+                  if [[ -f "$file" && "$file" == *.exe && "$file" != *version.json ]]; then
+                    echo "✅ 找到 Windows 二进制文件: $file"
+                    cp "$file" "release-assets/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-${target}.exe"
+                    break
+                  fi
+                done
+              else
+                # Unix binary - 查找非 JSON 的可执行文件
+                for file in "$dir"/*; do
+                  if [[ -f "$file" && "$file" != *.json && "$file" != */version.json ]]; then
+                    echo "✅ 找到 Unix 二进制文件: $file"
+                    cp "$file" "release-assets/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-${target}"
+                    chmod +x "release-assets/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-${target}"
+                    break
+                  fi
+                done
               fi
               
               # Copy version info
@@ -329,7 +346,7 @@ jobs:
             ```
             
             ---
-            **构建信息:** `${{ steps.release_info.outputs.commit_hash }}` | **构建时间:** $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)
+            **构建信息:** `${{ steps.release_info.outputs.commit_hash }}` | **构建时间:** $(date -u "+%Y-%m-%d %H:%M:%S UTC")
 
       # Create/Update latest release for main branch pushes
       - name: Create or update latest release
@@ -365,7 +382,7 @@ jobs:
             ```
             
             ---
-            **开发版本:** `${{ steps.release_info.outputs.build_identifier }}` | **提交:** `${{ steps.release_info.outputs.commit_hash }}` | **构建时间:** $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)
+            **开发版本:** `${{ steps.release_info.outputs.build_identifier }}` | **提交:** `${{ steps.release_info.outputs.commit_hash }}` | **构建时间:** $(date -u "+%Y-%m-%d %H:%M:%S UTC")
 
       - name: Display download links
         run: |
