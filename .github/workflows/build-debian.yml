@@ -1,0 +1,236 @@
+name: Build Debian Package
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 Start build
+        run: echo "🚀 Building mdict-rs Debian package"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史以正确生成版本号
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: x86_64-unknown-linux-gnu
+
+      # 添加缓存
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          # 只有当这些文件变化时才重建缓存
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          # 缓存整个target目录和cargo注册表
+          cache-on-failure: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev pkg-config build-essential
+
+      - name: Build release binary
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target x86_64-unknown-linux-gnu --bin mdict-rs
+
+      - name: Generate version number
+        id: version
+        run: |
+          # 尝试使用git标签作为版本号（移除v前缀）
+          GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [[ -n "$GIT_TAG" && "$GIT_TAG" =~ ^v[0-9].* ]]; then
+            # 有标签且格式正确，使用标签版本
+            VERSION="${GIT_TAG#v}"
+          else
+            # 没有合适的标签，使用日期+提交哈希作为版本号
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            DATE=$(date +%Y%m%d)
+            VERSION="0.1.0~${DATE}.${COMMIT_HASH}"
+          fi
+          
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "生成的版本号：$VERSION"
+
+      - name: Create Debian package structure
+        run: |
+          mkdir -p debian/DEBIAN
+          mkdir -p debian/usr/bin
+          mkdir -p debian/usr/share/doc/mdict-rs
+          mkdir -p debian/usr/share/mdict-rs/static
+          mkdir -p debian/usr/share/mdict-rs/mdx
+          mkdir -p debian/etc/systemd/system
+          
+          # 拷贝二进制文件
+          cp target/x86_64-unknown-linux-gnu/release/mdict-rs debian/usr/bin/
+          chmod +x debian/usr/bin/mdict-rs
+          
+          # 拷贝静态资源文件
+          cp -r resources/static/* debian/usr/share/mdict-rs/static/
+          
+          # 拷贝文档
+          cp README.md debian/usr/share/doc/mdict-rs/ 2>/dev/null || echo "No README.md found"
+          cp WARP.md debian/usr/share/doc/mdict-rs/ 2>/dev/null || echo "No WARP.md found"
+          
+          # 创建示例配置目录
+          mkdir -p debian/usr/share/mdict-rs/mdx/en
+          echo "# Place your .mdx dictionary files here" > debian/usr/share/mdict-rs/mdx/README.txt
+          
+          # 创建systemd服务文件
+          cat > debian/etc/systemd/system/mdict-rs.service << 'EOF'
+          [Unit]
+          Description=MDX Dictionary Server
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=mdict-rs
+          Group=mdict-rs
+          WorkingDirectory=/usr/share/mdict-rs
+          ExecStart=/usr/bin/mdict-rs
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          
+          # 创建控制文件
+          cat > debian/DEBIAN/control << EOF
+          Package: mdict-rs
+          Version: ${{ env.VERSION }}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Depends: libsqlite3-0 (>= 3.7.0)
+          Maintainer: MDict-RS Team <mdict-rs@example.com>
+          Homepage: https://github.com/your-username/mdict-rs
+          Description: Web-based MDX dictionary server
+           A Rust-based web application that serves MDX format dictionary files
+           through a web interface. Features include:
+           .
+           - Parses MDX v2.0 dictionary files with encryption support
+           - Creates SQLite indexes for fast lookups  
+           - Serves web interface on localhost:8181
+           - Supports multiple dictionary files simultaneously
+           - Automatic redirect resolution for cross-references
+          EOF
+          
+          # 创建postinst脚本（安装后执行）
+          cat > debian/DEBIAN/postinst << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          # 创建用户和组
+          if ! getent group mdict-rs > /dev/null 2>&1; then
+              addgroup --system mdict-rs
+          fi
+          
+          if ! getent passwd mdict-rs > /dev/null 2>&1; then
+              adduser --system --ingroup mdict-rs --home /usr/share/mdict-rs --shell /bin/false mdict-rs
+          fi
+          
+          # 设置文件权限
+          chown -R mdict-rs:mdict-rs /usr/share/mdict-rs
+          chmod 755 /usr/share/mdict-rs
+          
+          # 重新加载systemd
+          systemctl daemon-reload
+          
+          echo "mdict-rs installed successfully!"
+          echo "1. Place your .mdx files in /usr/share/mdict-rs/mdx/"
+          echo "2. Update configuration if needed"
+          echo "3. Start service: sudo systemctl start mdict-rs"
+          echo "4. Enable auto-start: sudo systemctl enable mdict-rs"
+          echo "5. Access: http://localhost:8181"
+          EOF
+          
+          # 创建prerm脚本（卸载前执行）
+          cat > debian/DEBIAN/prerm << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          # 停止服务
+          if systemctl is-active --quiet mdict-rs; then
+              systemctl stop mdict-rs
+          fi
+          
+          if systemctl is-enabled --quiet mdict-rs; then
+              systemctl disable mdict-rs
+          fi
+          EOF
+          
+          # 设置脚本权限
+          chmod 755 debian/DEBIAN/postinst debian/DEBIAN/prerm
+
+      - name: Build Debian package
+        run: |
+          dpkg-deb --build debian
+          mv debian.deb mdict-rs_${{ env.VERSION }}_amd64.deb
+
+      - name: Verify package
+        run: |
+          echo "📦 Package contents:"
+          dpkg-deb -c mdict-rs_${{ env.VERSION }}_amd64.deb
+          echo ""
+          echo "📋 Package info:"
+          dpkg-deb -I mdict-rs_${{ env.VERSION }}_amd64.deb
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdict-rs-debian
+          path: mdict-rs_*.deb
+
+      # 仅在发布标签时创建发布
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: mdict-rs_*.deb
+          draft: false
+          prerelease: false
+          body: |
+            ## 📦 mdict-rs Debian Package Release
+            
+            ### Installation
+            ```bash
+            # Download and install
+            wget https://github.com/your-username/mdict-rs/releases/download/${{ github.ref_name }}/mdict-rs_${{ env.VERSION }}_amd64.deb
+            sudo dpkg -i mdict-rs_${{ env.VERSION }}_amd64.deb
+            sudo apt-get install -f  # Fix any missing dependencies
+            ```
+            
+            ### Quick Start
+            ```bash
+            # Place your .mdx files
+            sudo cp your-dictionary.mdx /usr/share/mdict-rs/mdx/
+            
+            # Start the service
+            sudo systemctl start mdict-rs
+            sudo systemctl enable mdict-rs
+            
+            # Access the dictionary
+            open http://localhost:8181
+            ```
+            
+            ### What's Included
+            - Pre-compiled binary for x86_64 Linux
+            - Systemd service configuration
+            - Static web resources
+            - Automatic user/group creation
+            - Example configuration
