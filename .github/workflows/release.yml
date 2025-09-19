@@ -1,0 +1,389 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # Linux targets
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            cross: false
+            artifact_name: mdict-rs
+            asset_name: mdict-rs-linux-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            cross: false
+            artifact_name: mdict-rs
+            asset_name: mdict-rs-linux-x86_64-musl
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            cross: true
+            artifact_name: mdict-rs
+            asset_name: mdict-rs-linux-aarch64
+          
+          # macOS targets
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            cross: false
+            artifact_name: mdict-rs
+            asset_name: mdict-rs-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            cross: false
+            artifact_name: mdict-rs
+            asset_name: mdict-rs-macos-aarch64
+          
+          # Windows targets
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            cross: false
+            artifact_name: mdict-rs.exe
+            asset_name: mdict-rs-windows-x86_64.exe
+
+    steps:
+      - name: 🚀 Start build for ${{ matrix.target }}
+        run: echo "🚀 Building mdict-rs for ${{ matrix.target }}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史以正确生成版本号
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: ${{ matrix.target }}
+
+      # 添加缓存
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
+
+      # Linux dependencies
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-musl" ]]; then
+            sudo apt-get install -y musl-tools musl-dev
+          fi
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
+          sudo apt-get install -y libsqlite3-dev pkg-config build-essential
+
+      # Install cross for cross-compilation
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      # Generate version info
+      - name: Generate version and build info
+        id: release_info
+        shell: bash
+        run: |
+          # 尝试使用git标签作为版本号
+          GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+          DATE=$(date +%Y%m%d)
+          
+          if [[ -n "$GIT_TAG" && "$GIT_TAG" =~ ^v[0-9].* ]]; then
+            # 有标签且格式正确，使用标签版本
+            VERSION="${GIT_TAG#v}"
+            BUILD_IDENTIFIER="$VERSION"
+          else
+            # 没有合适的标签，使用日期+提交哈希作为版本号
+            VERSION="0.1.0-dev.${DATE}.${COMMIT_HASH}"
+            BUILD_IDENTIFIER="${DATE}.${COMMIT_HASH}"
+          fi
+          
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "BUILD_IDENTIFIER=$BUILD_IDENTIFIER" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_identifier=$BUILD_IDENTIFIER" >> $GITHUB_OUTPUT
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          
+          echo "生成的版本号：$VERSION"
+          echo "构建标识：$BUILD_IDENTIFIER"
+
+      # Build binary
+      - name: Build binary
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      # Package binary
+      - name: Package binary
+        shell: bash
+        run: |
+          mkdir -p release/
+          
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release/${{ matrix.asset_name }}
+          else
+            cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release/${{ matrix.asset_name }}
+            chmod +x release/${{ matrix.asset_name }}
+          fi
+          
+          # Copy static resources if they exist
+          if [[ -d "resources" ]]; then
+            cp -r resources release/resources
+          fi
+          
+          # Create version info file
+          cat > release/version.json << EOF
+          {
+            "version": "${{ env.VERSION }}",
+            "build_identifier": "${{ env.BUILD_IDENTIFIER }}",
+            "target": "${{ matrix.target }}",
+            "commit_hash": "${{ steps.release_info.outputs.commit_hash }}",
+            "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      # Upload artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdict-rs-${{ matrix.target }}
+          path: release/*
+
+  # Create releases
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Generate release info
+      - name: Generate release info
+        id: release_info
+        run: |
+          GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+          DATE=$(date +%Y%m%d)
+          
+          if [[ -n "$GIT_TAG" && "$GIT_TAG" =~ ^v[0-9].* ]]; then
+            VERSION="${GIT_TAG#v}"
+            BUILD_IDENTIFIER="$VERSION"
+            IS_RELEASE="true"
+          else
+            VERSION="0.1.0-dev.${DATE}.${COMMIT_HASH}"
+            BUILD_IDENTIFIER="${DATE}.${COMMIT_HASH}"
+            IS_RELEASE="false"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_identifier=$BUILD_IDENTIFIER" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+
+      # Download all artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Prepare release assets
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          
+          # Copy all binaries and rename them
+          for dir in artifacts/mdict-rs-*; do
+            if [[ -d "$dir" ]]; then
+              target=$(basename "$dir" | sed 's/mdict-rs-//')
+              
+              # Find the binary file
+              if [[ -f "$dir/mdict-rs-"*".exe" ]]; then
+                # Windows binary
+                binary_file=$(ls "$dir"/mdict-rs-*.exe | head -1)
+                cp "$binary_file" "release-assets/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-${target}.exe"
+              elif [[ -f "$dir/mdict-rs-"* ]]; then
+                # Unix binary
+                binary_file=$(ls "$dir"/mdict-rs-* | grep -v version.json | head -1)
+                cp "$binary_file" "release-assets/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-${target}"
+              fi
+              
+              # Copy version info
+              if [[ -f "$dir/version.json" ]]; then
+                cp "$dir/version.json" "release-assets/version-${target}.json"
+              fi
+              
+              # Copy resources if available
+              if [[ -d "$dir/resources" ]]; then
+                cp -r "$dir/resources" "release-assets/" 2>/dev/null || true
+              fi
+            fi
+          done
+          
+          # Create main version.json
+          cat > release-assets/version.json << EOF
+          {
+            "version": "${{ steps.release_info.outputs.version }}",
+            "build_identifier": "${{ steps.release_info.outputs.build_identifier }}",
+            "commit_hash": "${{ steps.release_info.outputs.commit_hash }}",
+            "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "is_release": ${{ steps.release_info.outputs.is_release }},
+            "targets": [
+              "x86_64-unknown-linux-gnu",
+              "x86_64-unknown-linux-musl", 
+              "aarch64-unknown-linux-gnu",
+              "x86_64-apple-darwin",
+              "aarch64-apple-darwin",
+              "x86_64-pc-windows-msvc"
+            ]
+          }
+          EOF
+          
+          echo "📦 准备发布的文件:"
+          ls -la release-assets/
+
+      # Create versioned release for tags
+      - name: Create versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.release_info.outputs.build_identifier }}
+          files: release-assets/*
+          draft: false
+          prerelease: false
+          body: |
+            ## 🚀 mdict-rs Release v${{ steps.release_info.outputs.version }}
+            
+            ### 📥 快速下载 (选择适合您系统的版本)
+            
+            **Linux (推荐用于服务器)**
+            - [x86_64 GNU](https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-unknown-linux-gnu) - 标准Linux版本
+            - [x86_64 MUSL](https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-unknown-linux-musl) - 静态链接版本
+            - [ARM64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-aarch64-unknown-linux-gnu) - ARM服务器/树莓派
+            
+            **macOS**
+            - [Intel Mac](https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-apple-darwin)
+            - [Apple Silicon (M1/M2)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-aarch64-apple-darwin)
+            
+            **Windows**
+            - [x64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-pc-windows-msvc.exe)
+            
+            ### 🛠️ 安装和使用
+            
+            **Linux/macOS:**
+            ```bash
+            # 下载对应版本 (以Linux x86_64为例)
+            wget https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-unknown-linux-gnu
+            
+            # 重命名并设置执行权限
+            mv mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-unknown-linux-gnu mdict-rs
+            chmod +x mdict-rs
+            
+            # 运行
+            ./mdict-rs
+            ```
+            
+            **Windows:**
+            ```cmd
+            # 下载并运行
+            mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-pc-windows-msvc.exe
+            ```
+            
+            ### 🔗 版本信息API
+            ```
+            https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/version.json
+            ```
+            
+            ---
+            **构建信息:** `${{ steps.release_info.outputs.commit_hash }}` | **构建时间:** $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)
+
+      # Create/Update latest release for main branch pushes
+      - name: Create or update latest release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest
+          files: release-assets/*
+          draft: false
+          prerelease: true
+          body: |
+            ## 🔄 mdict-rs Latest Build (Development)
+            
+            > **⚠️ 这是开发版本，可能包含未经充分测试的功能**
+            
+            ### 📥 快速下载 (最新开发版)
+            
+            **Linux (推荐用于服务器)**
+            - [x86_64 GNU](https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-unknown-linux-gnu) - 标准Linux版本
+            - [x86_64 MUSL](https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-unknown-linux-musl) - 静态链接版本
+            - [ARM64](https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-aarch64-unknown-linux-gnu) - ARM服务器/树莓派
+            
+            **macOS**
+            - [Intel Mac](https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-apple-darwin)
+            - [Apple Silicon (M1/M2)](https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-aarch64-apple-darwin)
+            
+            **Windows**
+            - [x64](https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-pc-windows-msvc.exe)
+            
+            ### 🔗 版本信息API
+            ```
+            https://github.com/${{ github.repository }}/releases/download/latest/version.json
+            ```
+            
+            ---
+            **开发版本:** `${{ steps.release_info.outputs.build_identifier }}` | **提交:** `${{ steps.release_info.outputs.commit_hash }}` | **构建时间:** $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)
+
+      - name: Display download links
+        run: |
+          echo "✅ 双Release创建完成"
+          echo ""
+          echo "📦 二进制版本信息:"
+          echo "   实际版本: ${{ steps.release_info.outputs.version }}"
+          echo "   构建标识: ${{ steps.release_info.outputs.build_identifier }}"
+          echo ""
+          if [[ "${{ steps.release_info.outputs.is_release }}" == "true" ]]; then
+            echo "🔗 版本化Release页面:"
+            echo "   https://github.com/${{ github.repository }}/releases/tag/v${{ steps.release_info.outputs.build_identifier }}"
+          fi
+          echo ""
+          echo "🔗 Latest别名页面 (开发版):"
+          echo "   https://github.com/${{ github.repository }}/releases/latest"
+          echo ""
+          echo "📦 主要下载链接:"
+          echo "   Linux x64: https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-unknown-linux-gnu"
+          echo "   macOS x64: https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-apple-darwin"
+          echo "   macOS ARM: https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-aarch64-apple-darwin"
+          echo "   Windows: https://github.com/${{ github.repository }}/releases/download/latest/mdict-rs-${{ steps.release_info.outputs.build_identifier }}-x86_64-pc-windows-msvc.exe"
+          echo ""
+          echo "📋 版本信息API:"
+          echo "   Latest: https://github.com/${{ github.repository }}/releases/download/latest/version.json"
+          if [[ "${{ steps.release_info.outputs.is_release }}" == "true" ]]; then
+            echo "   版本化: https://github.com/${{ github.repository }}/releases/download/v${{ steps.release_info.outputs.build_identifier }}/version.json"
+          fi
+          echo ""
+          echo "🌟 现在支持多平台交叉编译，选择适合您系统的版本！"

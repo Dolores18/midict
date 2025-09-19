@@ -41,27 +41,20 @@ fn query_with_redirect_resolution(word: String, redirect_count: u8) -> String {
                 return query_with_redirect_resolution(target_word.to_string(), redirect_count + 1);
             }
             
-            // This is a regular definition, return it with debug info
-            println!("找到词条，完整定义内容:");
-            println!("{}", def);
+            // This is a regular definition, return it
+            info!("Found definition for '{}'", word);
             
-            // 十六进制分析
-            println!("十六进制字节:");
-            let hex_str: String = def.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
-            println!("{}", hex_str);
+            // 不再逐字符打印，提高性能
+            // println!("手动解析:");
+            // let bytes = def.as_bytes();
+            // for (i, &byte) in bytes.iter().enumerate() {
+            //     if byte >= 32 && byte <= 126 {
+            //         println!("  [{}]: 0x{:02x} = '{}'", i, byte, byte as char);
+            //     } else {
+            //         println!("  [{}]: 0x{:02x} = <控制字符>", i, byte);
+            //     }
+            // }
             
-            // 手动解析十六进制看看内容
-            println!("手动解析:");
-            let bytes = def.as_bytes();
-            for (i, &byte) in bytes.iter().enumerate() {
-                if byte >= 32 && byte <= 126 {
-                    println!("  [{}]: 0x{:02x} = '{}'", i, byte, byte as char);
-                } else {
-                    println!("  [{}]: 0x{:02x} = <控制字符>", i, byte);
-                }
-            }
-            
-            println!("--- 定义内容结束 ---");
             return def;
         }
     }
