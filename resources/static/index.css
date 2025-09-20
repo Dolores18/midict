@@ -18,8 +18,8 @@ h1, h2, h3 {
     font-family: "SF Mono", monospace, "PingFang SC", "Microsoft YaHei";
 }
 
+/* 基础样式 */
 input, #lucky-btn, #lang-select {
-    width: 400px;
     height: 50px;
     border-radius: 3px;
     outline-style: none;
@@ -29,6 +29,11 @@ input, #lucky-btn, #lang-select {
     font-size: 16px;
     font-family: "SF Mono", monospace, "PingFang SC", "Microsoft YaHei";
     box-sizing: border-box;
+}
+
+/* 桌面端样式 */
+input {
+    width: 400px;
 }
 
 #lucky-btn {
@@ -49,6 +54,16 @@ input, #lucky-btn, #lang-select {
 .search-container {
     position: relative;
     display: inline-block;
+    vertical-align: middle;
+}
+
+/* 桌面端控件行布局 */
+.mobile-controls {
+    display: inline-block;
+}
+
+.mobile-controls select,
+.mobile-controls button {
     vertical-align: middle;
 }
 
@@ -89,15 +104,98 @@ input, #lucky-btn, #lang-select {
     padding: 0;
 }
 
-/* 在小屏幕上保持响应式 */
-@media (max-width: 640px) {
-    #mdx-resp {
-        max-width: calc(100% - 40px);
-        margin-left: 20px;
-        margin-right: 20px;
+/* 平板端响应式 */
+@media (max-width: 768px) {
+    #content {
+        max-width: 95% !important;
+        padding: 0 10px;
     }
     
     input {
-        width: calc(100% - 40px);
+        width: 300px;
+    }
+    
+    #lang-select {
+        width: 70px;
+        margin-left: 8px;
+        margin-right: 8px;
+    }
+    
+    #lucky-btn {
+        width: 80px;
+    }
+    
+    #mdx-resp {
+        max-width: 95%;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
+/* 手机端响应式 */
+@media (max-width: 480px) {
+    #content {
+        max-width: 100% !important;
+        padding: 0 5px;
+    }
+    
+    h2 {
+        font-size: 24px;
+        margin: 10px 0;
+    }
+    
+    #query-area {
+        padding: 0 10px;
+    }
+    
+    #search-form {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+    }
+    
+    .search-container {
+        width: 100%;
+        max-width: 300px;
+    }
+    
+    input {
+        width: 100%;
+    }
+    
+    /* 手机端按钮行布局 */
+    .mobile-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+    }
+    
+    #lang-select {
+        width: 100px;
+        margin: 0;
+    }
+    
+    #lucky-btn {
+        width: 100px;
+        margin: 0;
+    }
+    
+    #mdx-resp {
+        max-width: 100%;
+        margin: 15px 5px 0 5px;
+        font-size: 14px;
+        line-height: 1.4;
+    }
+    
+    /* 调整清空按钮在手机上的位置 */
+    .clear-btn {
+        right: 8px;
+        font-size: 12px;
+        width: 18px;
+        height: 18px;
     }
 }

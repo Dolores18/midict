@@ -825,6 +825,49 @@ function main() {
     right = $slider[0].getBoundingClientRect().right;
     updateSlider(((right - left) / 3) * lm6cf.defaultTopicClass + left);
   }
+  
+  // Hook sound:// 链接，替换为有道词典发音接口
+  lm6base.on('click', 'a[href^="sound://"]', function(e) {
+    e.preventDefault();
+    let href = $(this).attr('href');
+    console.log('Intercepted sound URL:', href);
+    
+    // 判断是英式还是美式发音
+    let type = 1; // 默认英式
+    if (href.includes('/ameProns/')) {
+      type = 2; // 美式发音
+    }
+    
+    // 从当前页面获取单词（从页面标题或者第一个.hwd元素）
+    let word = '';
+    let hwdElement = lm6base.find('.hwd').first();
+    if (hwdElement.length) {
+      word = hwdElement.text().trim();
+    }
+    
+    // 如果没找到单词，尝试从URL中提取
+    if (!word) {
+      let urlParts = href.split('/');
+      let filename = urlParts[urlParts.length - 1];
+      word = filename.replace(/\.(mp3|wav)$/i, ''); // 移除文件扩展名
+      // 清理单词名中的发音标记后缀
+      word = word.replace(/_las\d*_br$|_las\d*_am$|_br$|_am$|\d+$/, '');
+    }
+    
+    if (word) {
+      // 构建有道词典发音URL
+      let youdaoUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`;
+      console.log(`Playing pronunciation: ${word} (type: ${type === 1 ? '英式' : '美式'})`);
+      
+      // 播放音频
+      let audio = new Audio(youdaoUrl);
+      audio.play().catch(function(error) {
+        console.error('播放发音失败:', error);
+      });
+    } else {
+      console.warn('无法提取单词名称:', href);
+    }
+  });
 }
 
 $(main);
