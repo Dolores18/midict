@@ -17,7 +17,14 @@
         <div id="top-area" class="revout ids-g" style="text-align:center">
             <h2>ZhiMoe词典</h2>
             <div id="query-area">
-                <label for="word"></label><input type="text" name="word" id="word" placeholder="支持中英文短句， 英语单词会尝试拼写纠错"/>
+                <div class="search-container">
+                    <label for="word"></label><input type="text" name="word" id="word" placeholder="支持中英文短句， 英语单词会尝试拼写纠错"/>
+                    <span id="clear-btn" class="clear-btn">❌</span>
+                </div>
+                <select id="lang-select">
+                    <option value="en" selected>English</option>
+                    <option value="ja">日本語</option>
+                </select>
                 <button id="lucky-btn">试试手气</button>
             </div>
         </div>

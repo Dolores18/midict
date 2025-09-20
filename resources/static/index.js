@@ -1,16 +1,26 @@
 // 光标默认可输入
 $(document).ready(function (e) {
     $('#word').focus();
+    
+    // 初始化清空按钮状态
+    toggleClearButton();
 }
 );
 
 // 查询mdx
-function queryMdx(word) {
+function queryMdx(word, lang) {
     $('#mdx-resp').html('查询中...');
+    let requestData = { 'word': word };
+    
+    // 如果指定了语言且不是默认英语，则添加语言参数
+    if (lang && lang !== 'en') {
+        requestData.lang = lang;
+    }
+    
     $.ajax({
         url: './query',
         type: 'POST',
-        data: { 'word': word },
+        data: requestData,
         dataType: 'html',
         success: function (data) {
             if (data !== '') {
@@ -31,7 +41,8 @@ function postQuery() {
     if (!validInput(word)) {
         return;
     }
-    queryMdx(word);
+    let selectedLang = $('#lang-select').val() || 'en';
+    queryMdx(word, selectedLang);
 }
 
 // 特殊字符不查询
@@ -41,6 +52,25 @@ function validInput(word) {
         && word !== '#'
         && word !== '?'
         && word !== '/';
+}
+
+// 切换清空按钮显示状态
+function toggleClearButton() {
+    const searchContainer = $('.search-container');
+    const wordInput = $('#word');
+    
+    if (wordInput.val().trim().length > 0) {
+        searchContainer.addClass('has-content');
+    } else {
+        searchContainer.removeClass('has-content');
+    }
+}
+
+// 清空搜索框
+function clearSearchInput() {
+    $('#word').val('').focus();
+    toggleClearButton();
+    $('#mdx-resp').html('Ctrl + L 开始搜索');
 }
 
 // 监听回车键
@@ -61,12 +91,23 @@ $(document).on('click', 'a', function (e) {
     }
 });
 
+// 监听搜索框输入变化
+$(document).on('input', '#word', function() {
+    toggleClearButton();
+});
+
+// 监听清空按钮点击
+$(document).on('click', '#clear-btn', function(e) {
+    e.preventDefault();
+    clearSearchInput();
+});
+
 // 捕获ctrl+L快捷键
 $(window).bind('keyup keydown', function (e) {
     if ((e.ctrlKey || e.metaKey)
         && String.fromCharCode(e.which).toLowerCase() === 'l') {
         e.preventDefault();
-        $('#word').val('').focus();
+        clearSearchInput();
         scrollTo(0, 0);
     }
 });

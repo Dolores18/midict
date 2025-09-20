@@ -1,13 +1,13 @@
 use rusqlite::{Connection, named_params};
 use tracing::info;
 
-use crate::config::MDX_FILES;
+use crate::config::get_mdx_files_by_language;
 
-pub fn query(word: String) -> String {
-    query_with_redirect_resolution(word, 0)
+pub fn query(word: String, lang: Option<String>) -> String {
+    query_with_redirect_resolution(word, 0, lang)
 }
 
-fn query_with_redirect_resolution(word: String, redirect_count: u8) -> String {
+fn query_with_redirect_resolution(word: String, redirect_count: u8, lang: Option<String>) -> String {
     // Prevent infinite redirect loops
     if redirect_count > 5 {
         info!("Too many redirects ({}), stopping redirect resolution for: {}", redirect_count, word);
@@ -18,7 +18,8 @@ fn query_with_redirect_resolution(word: String, redirect_count: u8) -> String {
     let mut all_definitions = Vec::new();
     let mut redirect_targets = Vec::new();
     
-    for file in MDX_FILES {
+    let mdx_files = get_mdx_files_by_language(lang.as_deref());
+    for file in &mdx_files {
         let db_file = format!("{file}.db");
         let conn = Connection::open(&db_file).unwrap();
         
@@ -87,7 +88,7 @@ fn query_with_redirect_resolution(word: String, redirect_count: u8) -> String {
     
     // 递归解析所有跳转目标
     for target in redirect_targets {
-        let resolved_def = query_with_redirect_resolution(target, redirect_count + 1);
+        let resolved_def = query_with_redirect_resolution(target, redirect_count + 1, lang.clone());
         if resolved_def != "not found" {
             all_definitions.push(resolved_def);
         }

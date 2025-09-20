@@ -18,8 +18,8 @@ h1, h2, h3 {
     font-family: "SF Mono", monospace, "PingFang SC", "Microsoft YaHei";
 }
 
-input, #lucky-btn {
-    width: 600px;
+input, #lucky-btn, #lang-select {
+    width: 400px;
     height: 50px;
     border-radius: 3px;
     outline-style: none;
@@ -28,10 +28,76 @@ input, #lucky-btn {
     vertical-align: middle; /* 解决input和button上下错位问题 */
     font-size: 16px;
     font-family: "SF Mono", monospace, "PingFang SC", "Microsoft YaHei";
+    box-sizing: border-box;
 }
 
 #lucky-btn {
     width: 100px;
     font-weight: bold;
     border: 1px solid #e8c49a;
+}
+
+#lang-select {
+    width: 80px;
+    margin-left: 10px;
+    margin-right: 10px;
+    background-color: white;
+    cursor: pointer;
+}
+
+/* 搜索框容器 */
+.search-container {
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* 清空按钮样式 */
+.clear-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    font-size: 14px;
+    color: #e8c49a;
+    background: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: none; /* 默认隐藏 */
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    transition: opacity 0.2s ease;
+}
+
+.clear-btn:hover {
+    opacity: 0.7;
+}
+
+/* 当搜索框有内容时显示清空按钮 */
+.search-container.has-content .clear-btn {
+    display: flex;
+}
+
+/* 搜索结果区域对齐 */
+#mdx-resp {
+    text-align: left;
+    max-width: 600px; /* 与搜索框同宽 */
+    margin: 20px auto 0 auto; /* 居中对齐，与搜索框一致 */
+    padding: 0;
+}
+
+/* 在小屏幕上保持响应式 */
+@media (max-width: 640px) {
+    #mdx-resp {
+        max-width: calc(100% - 40px);
+        margin-left: 20px;
+        margin-right: 20px;
+    }
+    
+    input {
+        width: calc(100% - 40px);
+    }
 }

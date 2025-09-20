@@ -1,0 +1,23 @@
+# MDX Dictionary Configuration
+
+# List of MDX dictionary files to load
+# These paths are relative to the project root
+[[mdx_files]]
+path = "./resources/mdx/ja/明镜日汉双解辞典.mdx"
+enabled = true
+language = "ja"
+
+# Add more dictionaries as needed
+[[mdx_files]]
+path = "./resources/mdx/en/朗文当代高级英语辞典6th.mdx"
+enabled = true
+language = "en"
+
+# Server configuration
+[server]
+port = 8181
+host = "127.0.0.1"
+
+# Static files configuration
+[static_files]
+path = "./resources/static"

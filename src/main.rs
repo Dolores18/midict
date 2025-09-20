@@ -1,4 +1,4 @@
-use crate::config::{MDX_FILES, static_path};
+use crate::config::{get_mdx_files, static_path, server_address};
 use crate::handlers::{handle_lucky, handle_query};
 use crate::indexing::indexing;
 
@@ -27,7 +27,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    indexing(MDX_FILES, false);
+    let mdx_files = get_mdx_files();
+    let mdx_file_refs: Vec<&str> = mdx_files.iter().map(|s| s.as_str()).collect();
+    indexing(&mdx_file_refs, false);
 
     let static_dir = ServeDir::new(static_path()?);
 
@@ -37,10 +39,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .fallback_service(static_dir)
         .layer(TraceLayer::new_for_http());
 
-    let port = 8181;
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8181").await.unwrap();
+    let server_addr = server_address();
+    let listener = tokio::net::TcpListener::bind(&server_addr).await.unwrap();
 
-    info!("app serve on http://localhost:{}", port);
+    info!("app serve on http://{}", server_addr);
 
     axum::serve(listener, app).await?;
 
