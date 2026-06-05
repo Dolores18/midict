@@ -10,15 +10,31 @@ use tracing::info;
 /// indexing all mdx files into db
 pub(crate) fn indexing(files: &[&str], reindex: bool) {
     for file in files {
+        // 首先检查MDX文件是否存在
+        if !PathBuf::from(file).exists() {
+            info!("⚠️  跳过不存在的MDX文件: {}", file);
+            continue;
+        }
+        
         let db_file = format!("{}{}", file.to_string(), ".db");
         if PathBuf::from(&db_file).exists() {
             if reindex {
-                fs::remove_file(&db_file).expect("remove old db file error");
-                info!("old db file:{} removed", &db_file);
-                mdx_to_sqlite(file).unwrap();
+                match fs::remove_file(&db_file) {
+                    Ok(_) => {
+                        info!("old db file:{} removed", &db_file);
+                        if let Err(e) = mdx_to_sqlite(file) {
+                            info!("❌ 索引失败 {}: {}", file, e);
+                        }
+                    }
+                    Err(e) => {
+                        info!("❌ 删除旧数据库文件失败 {}: {}", db_file, e);
+                    }
+                }
             }
         } else {
-            mdx_to_sqlite(file).unwrap();
+            if let Err(e) = mdx_to_sqlite(file) {
+                info!("❌ 索引失败 {}: {}", file, e);
+            }
         }
     }
 }
@@ -84,6 +100,9 @@ pub(crate) fn mdx_to_sqlite(file: &str) -> anyhow::Result<()> {
         info!("⚠️  警告: 数据不一致，可能存在问题");
     }
     
-    conn.close().expect("close db connection failed");
+    conn.close().map_err(|(_, e)| e)
+        .with_context(|| "关闭数据库连接失败")?;
+    
+    info!("✅ 索引完成: {} -> {}", file, db_file);
     Ok(())
 }
