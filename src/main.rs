@@ -34,7 +34,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let static_dir = ServeDir::new(static_path()?);
 
     let app = Router::new()
-        .route("/query", post(handle_query))
+        .route("/query", post(handle_query_post))
+        .route("/query", get(handle_query_get))
         .route("/lucky", get(handle_lucky))
         .fallback_service(static_dir)
         .layer(TraceLayer::new_for_http());
