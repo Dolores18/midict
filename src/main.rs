@@ -1,5 +1,5 @@
 use crate::config::{get_mdx_files, static_path, server_address};
-use crate::handlers::{handle_lucky, handle_query};
+use crate::handlers::{handle_lucky, handle_query_post, handle_query_get};
 use crate::indexing::indexing;
 
 use axum::{

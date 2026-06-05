@@ -37,7 +37,7 @@ function queryMdx(word, lang) {
 }
 
 function postQuery() {
-    let word = $('#word').val().trim();
+    let word = $('#word').val().trim().toLowerCase();
     if (!validInput(word)) {
         return;
     }
@@ -85,7 +85,7 @@ $(document).on('click', 'a', function (e) {
     console.log($(this).attr('href'));
     let href = $(this).attr('href');// '/cool'
     if (href.startsWith('/') && !href.startsWith('/#')) {
-        $('#word').val(href.slice(1)) // 'cool'
+        $('#word').val(href.slice(1).toLowerCase()) // 'cool'
         postQuery();
         e.preventDefault()
     }
